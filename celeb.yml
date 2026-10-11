@@ -1,0 +1,60 @@
+name: Celebrity news bot
+
+on:
+  schedule:
+    - cron: "3,18,33,48 * * * *"   # every 15 minutes, offset from the news bot
+  workflow_dispatch:
+    inputs:
+      test:
+        description: "Send only a test message to the channel"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: celeb-bot
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Run bot
+        env:
+          PYTHONUNBUFFERED: "1"
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: python main.py ${{ inputs.test && '--test' || '' }}
+
+      # Runs even if the bot step failed, so progress made before a failure is kept.
+      - name: Save state
+        if: ${{ !cancelled() }}
+        run: |
+          git config user.name "celeb-bot"
+          git config user.email "news-bot@users.noreply.github.com"
+          for f in seen.json; do [ -f "$f" ] && git add "$f"; done
+          true
+          git diff --cached --quiet && exit 0
+          git commit -m "update state"
+          for i in 1 2 3; do
+            if git pull --rebase -X theirs origin "$GITHUB_REF_NAME" && git push origin "HEAD:$GITHUB_REF_NAME"; then
+              exit 0
+            fi
+            git rebase --abort 2>/dev/null || true
+            sleep 5
+          done
+          exit 1

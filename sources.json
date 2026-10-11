@@ -1,0 +1,162 @@
+[
+  {
+    "name": "TMZ",
+    "url": "https://www.tmz.com/category/breaking-news/rss.xml",
+    "label": "گاسیپ و خبر فوری",
+    "priority": 1,
+    "lang": "en",
+    "enabled": true
+  },
+  {
+    "name": "TMZ · همه",
+    "url": "https://www.tmz.com/rss.xml",
+    "label": "گاسیپ و خبر فوری",
+    "priority": 1,
+    "lang": "en",
+    "enabled": true
+  },
+  {
+    "name": "Page Six",
+    "url": "https://pagesix.com/feed/",
+    "label": "گاسیپ و حاشیه",
+    "priority": 1,
+    "lang": "en",
+    "enabled": true
+  },
+  {
+    "name": "The Shade Room",
+    "url": "https://theshaderoom.com/feed/",
+    "label": "گاسیپ، شبکه‌های اجتماعی",
+    "priority": 1,
+    "lang": "en",
+    "enabled": true
+  },
+  {
+    "name": "Just Jared",
+    "url": "https://www.justjared.com/feed/",
+    "label": "سلبریتی و سینما",
+    "priority": 2,
+    "lang": "en",
+    "enabled": true
+  },
+  {
+    "name": "E! News",
+    "url": "https://www.eonline.com/syndication/feeds/rssfeeds/topstories.xml",
+    "label": "سلبریتی و تلویزیون",
+    "priority": 2,
+    "lang": "en",
+    "enabled": true
+  },
+  {
+    "name": "People",
+    "url": "https://people.com/feed/",
+    "label": "سلبریتی",
+    "priority": 2,
+    "lang": "en",
+    "enabled": true
+  },
+  {
+    "name": "Daily Mail Showbiz",
+    "url": "https://www.dailymail.co.uk/tvshowbiz/index.rss",
+    "label": "گاسیپ و جنجال",
+    "priority": 2,
+    "lang": "en",
+    "enabled": true
+  },
+  {
+    "name": "Us Weekly",
+    "url": "https://www.usmagazine.com/feed/",
+    "label": "گاسیپ",
+    "priority": 2,
+    "lang": "en",
+    "enabled": true
+  },
+  {
+    "name": "Perez Hilton",
+    "url": "https://perezhilton.com/feed/",
+    "label": "گاسیپ",
+    "priority": 2,
+    "lang": "en",
+    "enabled": true
+  },
+  {
+    "name": "Vogue",
+    "url": "https://www.vogue.com/feed/rss",
+    "label": "مد",
+    "priority": 3,
+    "lang": "en",
+    "enabled": true
+  },
+  {
+    "name": "WWD",
+    "url": "https://wwd.com/feed/",
+    "label": "صنعت مد",
+    "priority": 3,
+    "lang": "en",
+    "enabled": true
+  },
+  {
+    "name": "Who What Wear",
+    "url": "https://www.whowhatwear.com/rss",
+    "label": "مد و استایل",
+    "priority": 3,
+    "lang": "en",
+    "enabled": true
+  },
+  {
+    "name": "Harper's Bazaar",
+    "url": "https://www.harpersbazaar.com/rss/all.xml/",
+    "label": "مد",
+    "priority": 3,
+    "lang": "en",
+    "enabled": true
+  },
+  {
+    "name": "The Hollywood Reporter",
+    "url": "https://www.hollywoodreporter.com/feed/",
+    "label": "سینما و صنعت سرگرمی",
+    "priority": 2,
+    "lang": "en",
+    "enabled": true
+  },
+  {
+    "name": "Variety",
+    "url": "https://variety.com/feed/",
+    "label": "سینما و صنعت سرگرمی",
+    "priority": 2,
+    "lang": "en",
+    "enabled": true
+  },
+  {
+    "name": "Deadline",
+    "url": "https://deadline.com/feed/",
+    "label": "سینما و تلویزیون",
+    "priority": 3,
+    "lang": "en",
+    "enabled": true
+  },
+  {
+    "name": "Billboard",
+    "url": "https://www.billboard.com/feed/",
+    "label": "موسیقی",
+    "priority": 2,
+    "lang": "en",
+    "enabled": true
+  },
+  {
+    "name": "Rolling Stone",
+    "url": "https://www.rollingstone.com/feed/",
+    "label": "موسیقی",
+    "priority": 3,
+    "lang": "en",
+    "enabled": true
+  },
+  {
+    "name": "Pitchfork",
+    "url": "https://pitchfork.com/feed/feed-news/rss",
+    "label": "موسیقی",
+    "priority": 3,
+    "lang": "en",
+    "enabled": true
+  }
+]
