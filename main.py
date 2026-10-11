@@ -131,7 +131,7 @@ SEEN_FILE = "seen.json"
 
 MAX_AGE_HOURS = 24          # Persian items older than this are never posted
 MAX_AGE_FOREIGN_HOURS = 12 if CELEB else 8   # foreign items: only fresh ones (avoids backlog floods)
-MAX_PERSIAN_PER_RUN = 8     # per run (every ~15 min); keeps the channel readable
+MAX_PERSIAN_PER_RUN = 12     # per run (every ~15 min); keeps the channel readable
 MAX_FOREIGN_PER_RUN = 8 if CELEB else 4      # total foreign items per run
 MAX_PER_SOURCE = 2 if CELEB else 1           # per foreign source and run
 WORLD_PER_RUN = 3           # at most this many "rank 3" (non-Iran, non-Middle-East) items per run
