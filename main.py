@@ -2,14 +2,14 @@
 """Celebrity news Telegram bot (gossip, fashion, music, cinema).
 
 Each run: read the feeds in sources.json, find items not seen before, translate them to
-Persian (Gemini -> Groq -> Google Translate), post them to the Telegram channel with the
-original link, and remember them in seen.json.
+Persian with Gemini (if it fails: post the original English), post them to the Telegram channel with the original
+English headline and a link, and remember them in seen.json.
 
 Secrets (GitHub: Settings > Secrets and variables > Actions):
   TELEGRAM_BOT_TOKEN  - token from @BotFather, like 123456789:AAF...
   TELEGRAM_CHAT_ID    - @channelusername (public) or -100xxxxxxxxxx (private)
-  GEMINI_API_KEY      - optional, free key from aistudio.google.com/apikey
-  GROQ_API_KEY        - optional, free key from console.groq.com
+  GEMINI_API_KEY      - free key from aistudio.google.com/apikey (needed for translation)
+  GROQ_API_KEY        - optional backup, free key from console.groq.com
 
 Usage:
   python main.py          normal run
@@ -146,6 +146,9 @@ GEMINI_KEY = clean_secret(os.environ.get("GEMINI_API_KEY", ""))
 GROQ_KEY = clean_secret(os.environ.get("GROQ_API_KEY", ""))
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "").strip() or "gemini-2.5-flash-lite"
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "").strip() or "llama-3.3-70b-versatile"
+# Google Translate is much weaker than Gemini, so it is off. If Gemini (and the optional Groq)
+# fail, the items are posted in the original English text.
+USE_GOOGLE_FALLBACK = False
 
 # ---- Filter: skipped when the title contains one of these (hard politics / war, betting,
 # shopping spam). Matching is case-insensitive. Edit freely. ----
@@ -296,13 +299,16 @@ def format_post(item):
     # Many feeds repeat the title as the summary - skip it in that case.
     if summary and not summary.startswith(title[:30]):
         parts.append(html.escape(summary))
+    if item.get("orig_title"):
+        parts.append("🔤 <i>%s</i>" % html.escape(shorten(item["orig_title"], 200)))
     source_line = item["name"]
     if item["label"]:
         source_line += " · " + item["label"]
     if item.get("translated"):
         source_line += " · ترجمه‌ی ماشینی"
     parts.append("📰 " + html.escape(source_line))
-    parts.append('<a href="%s">لینک خبر اصلی</a>' % html.escape(item["link"], quote=True))
+    link_text = "لینک خبر اصلی" if item.get("translated") else "Read the full story"
+    parts.append('<a href="%s">%s</a>' % (html.escape(item["link"], quote=True), link_text))
     return "\n\n".join(parts)
 
 
@@ -379,13 +385,26 @@ def translate_texts(texts):
         engines.append(("Gemini", translate_gemini))
     if GROQ_KEY:
         engines.append(("Groq", translate_groq))
-    engines.append(("Google", translate_google))
+    if USE_GOOGLE_FALLBACK:
+        engines.append(("Google", translate_google))
     for name, fn in engines:
         try:
             result = fn(texts)
         except Exception as exc:  # network, quota (429), bad JSON ...
-            # Do not print exception text (URLs can contain keys).
-            print("Translation via %s failed: %s" % (name, type(exc).__name__))
+            # Never print the exception text itself (URLs can contain keys); print only the
+            # HTTP status and the provider's own short error message.
+            detail = ""
+            resp = getattr(exc, "response", None)
+            if resp is not None:
+                detail = " HTTP %s" % resp.status_code
+                try:
+                    err = resp.json().get("error") or {}
+                    msg = err.get("message") if isinstance(err, dict) else str(err)
+                    if msg:
+                        detail += " - " + safe(msg, 160).replace(GEMINI_KEY or "\0", "***").replace(GROQ_KEY or "\0", "***")
+                except Exception:
+                    pass
+            print("Translation via %s failed: %s%s" % (name, type(exc).__name__, detail))
             continue
         if result and len(result) == len(texts) and all(HAS_PERSIAN.search(t) for t in result):
             return result, name
@@ -406,10 +425,13 @@ def translate_items(items):
         texts.append(i["summary"] or "-")
     result, engine = translate_texts(texts)
     if not result:
-        print("No translator available - %d foreign item(s) will be retried next run." % len(todo))
-        return done
+        # Gemini failed: post the original English text rather than a poor translation or nothing.
+        print("::warning title=Celebrity bot::Translation failed - %d item(s) are posted in the original "
+              "English. See the 'Translation via ...' lines above for the reason." % len(todo))
+        return done + todo
     print("Translated %d foreign item(s) with %s." % (len(todo), engine))
     for k, i in enumerate(todo):
+        i["orig_title"] = i["title"]
         i["title"] = result[2 * k]
         summ = result[2 * k + 1]
         i["summary"] = "" if summ.strip(" -") == "" else summ
@@ -561,8 +583,7 @@ def main():
     if "--test" in sys.argv:
         if not self_check():
             sys.exit(1)
-        result = send_message("✅ ربات کانال سلبریتی فعال است و به کانال وصل شد." if CELEB
-                              else "✅ ربات خبر فعال است و به کانال وصل شد.")
+        result = send_message("✅ ربات کانال سلبریتی فعال است و به کانال وصل شد.")
         print("Test message: %s" % result)
         sys.exit(0 if result == "ok" else 1)
 
