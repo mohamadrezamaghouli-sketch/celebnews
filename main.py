@@ -132,7 +132,7 @@ SEEN_FILE = "seen.json"
 MAX_AGE_HOURS = 24          # Persian items older than this are never posted
 MAX_AGE_FOREIGN_HOURS = 12 if CELEB else 8   # foreign items: only fresh ones (avoids backlog floods)
 MAX_PERSIAN_PER_RUN = 8     # per run (every ~15 min); keeps the channel readable
-MAX_FOREIGN_PER_RUN = 8 if CELEB else 4      # total foreign items per run
+MAX_FOREIGN_PER_RUN = 5 if CELEB else 4      # total foreign items per run
 MAX_PER_SOURCE = 2 if CELEB else 1           # per foreign source and run
 WORLD_PER_RUN = 3           # at most this many "rank 3" (non-Iran, non-Middle-East) items per run
 FIRST_RUN_POSTS = 8 if CELEB else 5         # on the very first run, post only the newest few
@@ -252,9 +252,159 @@ def compile_words(words):
 EXCLUDE_RE = compile_words(EXCLUDE_WORDS)
 
 
+# ---- Quality scoring (edit freely) -------------------------------------------------------
+# A story is posted when it is a STRONG story or its score >= MIN_SCORE.
+#   STRONG (never dropped): mentions a watch-listed event, a watch-listed celebrity in the headline,
+#                           or the same story appears on 2+ different sites (it is going viral).
+#   score = source weight + 2 per "big news" word (max 2) + 2 for a celebrity name
+#           + 4 for an event + 3 / 5 when 2 / 3+ sites cover it + 1 when it is among the top
+#           stories of its feed.
+# The best-scoring (then newest) stories are posted first. Raise MIN_SCORE for fewer posts.
+MIN_SCORE = 3
+SOURCE_WEIGHT = {1: 2, 2: 1, 3: 0}     # gossip sources (priority 1) get a head start
+TOP_OF_FEED = 3                        # the first N items of a feed count as "front page"
+
+# Listicles, shopping, how-tos, recaps ... are dropped, unless the story is STRONG.
+JUNK_WORDS = [
+    "best ", "how to", "quiz", "gift guide", "gifts for", "outfit ideas", "style tips", "things to know",
+    "everything we know", "everything to know", "recap", "podcast", "newsletter", "ranked", "every ",
+    "live updates", "what to watch", "where to watch", "streaming guide", "we tried", "shop ", "under $",
+    "deal", "review:", "trailer", "what we know", "from the archives", "throwback", "workout", "skincare",
+    "recipe", "horoscope", "buy ",
+]
+JUNK_RE = compile_words(JUNK_WORDS)
+
+# Words that usually mean real news: life events, legal trouble, feuds, big awards and releases.
+BIG_NEWS_WORDS = [
+    "dies", "dead", "death", "died", "passed away", "arrested", "arrest", "charged", "lawsuit", "sues",
+    "sued", "trial", "verdict", "jail", "prison", "rehab", "hospitalized", "divorce", "split", "breakup",
+    "breaks up", "engaged", "engagement", "pregnant", "baby", "welcomes", "wedding", "married", "marries",
+    "cheating", "affair", "feud", "scandal", "slams", "blasts", "fires back", "responds", "apologizes",
+    "confirms", "reveals", "shocking", "backlash", "controversy", "cancelled", "canceled", "fired",
+    "grammy", "oscar", "emmy", "golden globe", "met gala", "billboard", "no. 1", "tour", "album",
+    "box office", "premiere", "casting", "cast as", "joins", "returns", "exclusive", "dating", "spotted",
+    "breaks silence", "red carpet", "runway", "debut", "surprise",
+]
+BIG_NEWS_RE = compile_words(BIG_NEWS_WORDS)
+
+# Celebrities whose news should never be missed. You can add more names in watchlist.json
+# (optional file in the repo root): {"people": ["Name", ...], "events": ["Event", ...]}
+A_LIST = [
+    "taylor swift", "beyonce", "beyoncé", "kardashian", "kylie jenner", "kendall jenner", "rihanna",
+    "drake", "selena gomez", "zendaya", "timothée chalamet", "timothee chalamet", "justin bieber",
+    "hailey bieber", "kanye", "bad bunny", "ariana grande", "lady gaga", "billie eilish",
+    "sabrina carpenter", "olivia rodrigo", "dua lipa", "harry styles", "the weeknd", "travis kelce",
+    "brad pitt", "angelina jolie", "jennifer lopez", "ben affleck", "leonardo dicaprio", "tom cruise",
+    "johnny depp", "meghan markle", "prince harry", "prince william", "kate middleton", "diddy",
+    "sean combs", "cardi b", "nicki minaj", "megan thee stallion", "doja cat", "lizzo", "miley cyrus",
+    "britney spears", "jay-z", "kendrick lamar", "travis scott", "shakira", "madonna", "katy perry",
+    "gigi hadid", "bella hadid", "blake lively", "justin baldoni", "ryan reynolds", "ryan gosling",
+    "margot robbie", "scarlett johansson", "jennifer lawrence", "pedro pascal", "jacob elordi",
+    "chappell roan", "charli xcx", "sza", "rosalía", "rosalia", "bts", "blackpink", "jungkook", "oprah",
+    "king charles", "princess kate", "hugh jackman", "anne hathaway", "emma stone",
+    "florence pugh", "austin butler", "lil nas x", "post malone", "morgan wallen",
+]
+# Big events (fashion shows, award nights, festivals, tours). A story about one is never dropped.
+EVENTS = [
+    "victoria's secret", "victorias secret", "met gala", "met costume", "oscars", "academy awards",
+    "grammys", "grammy awards", "emmys", "emmy awards", "golden globes", "baftas", "bafta awards",
+    "cannes", "venice film festival", "toronto film festival", "sundance", "coachella", "glastonbury",
+    "vmas", "mtv vma", "billboard music awards", "american music awards", "cma awards", "brit awards",
+    "super bowl halftime", "halftime show", "fashion week", "couture week", "chanel show", "dior show",
+    "louis vuitton show", "gucci show", "balenciaga", "versace show", "eras tour", "tony awards",
+    "people's choice awards", "critics choice", "sag awards", "kennedy center honors", "comic-con",
+    "comic con", "burning man", "oscar party", "vanity fair party", "amfar", "cfda awards", "fashion awards",
+]
+
+
+def load_watchlist():
+    """Optional watchlist.json: extra names / events added to the built-in lists."""
+    try:
+        with open("watchlist.json", encoding="utf-8") as f:
+            data = json.load(f)
+        people = [str(x) for x in data.get("people", []) if str(x).strip()]
+        events = [str(x) for x in data.get("events", []) if str(x).strip()]
+        return people, events
+    except (OSError, ValueError, AttributeError):
+        return [], []
+
+
+_extra_people, _extra_events = load_watchlist()
+A_LIST_RE = compile_words(A_LIST + _extra_people)
+EVENT_RE = compile_words(EVENTS + _extra_events)
+
+# ---- "Going viral": the same story on several sites -------------------------------------
+_STOP = set("""the and for with that this from into after over about their there have has had are was were
+will would could should been being its his her him she they them you your our out off than then also not but
+new just more most says said say get gets got one two how why what when who whom which while amid via per
+let up down all any can may now still back first last year years day days week weeks""".split())
+
+
+def _stems(title):
+    words = re.findall(r"[a-z0-9]+", norm_text(title).replace("'", "").replace("’", ""))
+    return {w[:5] for w in words if len(w) >= 3 and w not in _STOP}
+
+
+def _site(item):
+    return item["name"].split(" · ")[0].strip()
+
+
+def cluster_items(items):
+    """Groups items about the same story (shared headline words). Sets on every item:
+    cid (cluster id), buzz (number of different sites covering it), sites (their names).
+    Returns {cid: [items]}."""
+    n = len(items)
+    stems = [_stems(i["title"]) for i in items]
+    parent = list(range(n))
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for a in range(n):
+        if len(stems[a]) < 2:
+            continue
+        for b in range(a + 1, n):
+            if len(stems[b]) < 2:
+                continue
+            shared = len(stems[a] & stems[b])
+            if shared >= 3 or (shared >= 2 and shared / len(stems[a] | stems[b]) >= 0.5):
+                parent[find(a)] = find(b)
+    groups = {}
+    for idx, item in enumerate(items):
+        groups.setdefault(find(idx), []).append(item)
+    for gid, members in groups.items():
+        sites = sorted({_site(m) for m in members})
+        for m in members:
+            m["cid"], m["buzz"], m["sites"] = gid, len(sites), sites
+    return groups
+
+
 def classify(item):
-    """Returns (rank, keep): rank = source priority (1 first), keep = False for skipped items."""
-    return item.get("priority", 3), not EXCLUDE_RE.search(norm_text(item["title"]))
+    """Returns (rank, keep). rank: lower = posted first (best score first)."""
+    title = norm_text(item["title"])
+    if EXCLUDE_RE.search(title):
+        return 0, False
+    text = title + " " + norm_text(item["summary"])
+    buzz = item.get("buzz", 1)
+    event = bool(EVENT_RE.search(text))
+    star_in_title = bool(A_LIST_RE.search(title))
+    strong = event or star_in_title or buzz >= 2
+    if JUNK_RE.search(title) and not strong:
+        return 0, False
+    score = SOURCE_WEIGHT.get(item.get("priority", 3), 0)
+    score += 2 * min(2, len(set(m.group(0) for m in BIG_NEWS_RE.finditer(text))))
+    if star_in_title or A_LIST_RE.search(text):
+        score += 2
+    if event:
+        score += 4
+    score += 5 if buzz >= 3 else 3 if buzz == 2 else 0
+    if item.get("pos", 99) < TOP_OF_FEED:
+        score += 1
+    item["score"], item["strong"] = score, strong
+    return -score, strong or score >= MIN_SCORE
 
 
 # ------------------------------------------------------------------- feeds
@@ -270,6 +420,7 @@ def fetch_feed(source):
             "blocking this server, or the URL changed" % (resp.status_code, ctype or "unknown"))
     items = []
     for e in parsed.entries:
+        pos = len(items)
         link = (e.get("link") or "").strip()
         title = clean_text(e.get("title"))
         if not link or not title:
@@ -288,6 +439,7 @@ def fetch_feed(source):
             "priority": source.get("priority", 3),
             "lang": source.get("lang", "fa"),
             "strict": bool(source.get("strict", False)),
+            "pos": pos,
         })
     return items
 
@@ -307,6 +459,9 @@ def format_post(item):
     if item.get("translated"):
         source_line += " · ترجمه‌ی ماشینی"
     parts.append("📰 " + html.escape(source_line))
+    if item.get("also"):
+        also = "، ".join(item["also"]) if item.get("translated") else ", ".join(item["also"])
+        parts.append(("📡 همچنین در: " if item.get("translated") else "📡 Also on: ") + html.escape(also))
     link_text = "لینک خبر اصلی" if item.get("translated") else "Read the full story"
     parts.append('<a href="%s">%s</a>' % (html.escape(item["link"], quote=True), link_text))
     return "\n\n".join(parts)
@@ -622,19 +777,46 @@ def main():
     new_items = [i for i in unique.values()
                  if i["key"] not in seen_set and i["id"] not in seen_set]
 
+    # Stories that several sites cover at the same time are "going viral": find them first.
+    window = now - timedelta(hours=24)
+    recent = [i for i in unique.values() if i["ts"] >= window]
+    groups = cluster_items(recent)
+    for i in unique.values():
+        i["rank"], i["keep"] = classify(i)
+
     # Old or not-important items are marked as seen without posting them.
     fresh = []
     dropped = 0
     for i in new_items:
         cutoff = cutoff_fa if i["lang"] == "fa" else cutoff_foreign
-        i["rank"], keep = classify(i)
-        if i["ts"] < cutoff or not keep:
+        if i["ts"] < cutoff or not i["keep"]:
             seen.append(i["key"])
             dropped += 1
         else:
             fresh.append(i)
-    print("Filter: %d new, %d dropped (old / not important), %d candidates." % (
-        len(new_items), dropped, len(fresh)))
+
+    # One post per story: skip stories already posted from another site, and among several new
+    # copies keep only the best one (it lists the other sites in an "Also on" line).
+    dups = 0
+    by_cluster = {}
+    for i in fresh:
+        by_cluster.setdefault(i.get("cid", id(i)), []).append(i)
+    fresh = []
+    for cid, members in by_cluster.items():
+        everyone = groups.get(cid, members)
+        if any(m["key"] in seen_set and m.get("keep") for m in everyone):
+            seen.extend(m["key"] for m in members)  # already posted via another site
+            dups += len(members)
+            continue
+        members.sort(key=lambda m: (m["rank"], -m["ts"].timestamp()))
+        best = members[0]
+        best["also"] = [x for x in best.get("sites", []) if x != _site(best)]
+        seen.extend(m["key"] for m in members[1:])
+        dups += len(members) - 1
+        fresh.append(best)
+    strong = sum(1 for i in fresh if i.get("strong"))
+    print("Filter: %d new, %d dropped (old / low quality), %d duplicates of the same story, "
+          "%d candidates (%d strong: event / star / viral)." % (len(new_items), dropped, dups, len(fresh), strong))
 
     if first_run:
         fresh.sort(key=lambda i: i["ts"], reverse=True)
@@ -646,7 +828,8 @@ def main():
     else:
         # Persian agencies first, then foreign ones; within each: Iran, Middle East, world.
         persian = sorted((i for i in fresh if i["lang"] == "fa"), key=lambda i: (i["rank"], i["ts"]))
-        foreign = sorted((i for i in fresh if i["lang"] != "fa"), key=lambda i: (i["rank"], i["ts"]))
+        foreign = sorted((i for i in fresh if i["lang"] != "fa"),
+                         key=lambda i: (i["rank"], -i["ts"].timestamp()))  # best score, then newest
         to_post, world, used = [], 0, []
         for i in persian:
             if len(to_post) >= MAX_PERSIAN_PER_RUN:
@@ -666,7 +849,7 @@ def main():
             world += (not CELEB) and i["rank"] == 3
             foreign_pick.append(i)
         to_post += translate_items(foreign_pick)
-        to_post.sort(key=lambda i: (i["lang"] != "fa", i["rank"], i["ts"]))
+        to_post.sort(key=lambda i: (i["lang"] != "fa", i["ts"]))  # post oldest first, newest last
 
     posted = skipped = 0
     stop_reason = None
