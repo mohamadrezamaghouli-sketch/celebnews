@@ -144,7 +144,7 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; NewsBot/1.0)"}
 
 GEMINI_KEY = clean_secret(os.environ.get("GEMINI_API_KEY", ""))
 GROQ_KEY = clean_secret(os.environ.get("GROQ_API_KEY", ""))
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "").strip() or "gemini-2.5-flash-lite"
+GEMINI_MODEL = re.sub(r"^models/", "", os.environ.get("GEMINI_MODEL", "").strip()) or "gemini-2.5-flash-lite"
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "").strip() or "llama-3.3-70b-versatile"
 # Google Translate is much weaker than Gemini, so it is off. If Gemini (and the optional Groq)
 # fail, the items are posted in the original English text.
@@ -500,12 +500,29 @@ def parse_json_array(text, n):
 
 def translate_gemini(texts):
     url = ("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent" % GEMINI_MODEL)
+    off = "BLOCK_NONE"  # celebrity gossip often trips the default filters; this is only translation
     body = {"contents": [{"parts": [{"text": TRANSLATE_PROMPT % json.dumps(texts, ensure_ascii=False)}]}],
-            "generationConfig": {"temperature": 0.1, "responseMimeType": "application/json"}}
-    r = requests.post(url, json=body, headers={"x-goog-api-key": GEMINI_KEY}, timeout=60)
+            "generationConfig": {"temperature": 0.1, "responseMimeType": "application/json"},
+            "safetySettings": [{"category": c, "threshold": off} for c in (
+                "HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH",
+                "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT")]}
+    for attempt in (1, 2):
+        r = requests.post(url, json=body, headers={"x-goog-api-key": GEMINI_KEY}, timeout=60)
+        if r.status_code in (429, 500, 503) and attempt == 1:
+            time.sleep(8)  # busy or rate-limited: one more try
+            continue
+        break
     r.raise_for_status()
-    parts = r.json()["candidates"][0]["content"]["parts"]
-    return parse_json_array("".join(p.get("text", "") for p in parts), len(texts))
+    data = r.json()
+    cands = data.get("candidates") or []
+    if not cands:
+        reason = (data.get("promptFeedback") or {}).get("blockReason", "no candidates in the answer")
+        raise RuntimeError("Gemini returned no text (%s)" % reason)
+    parts = (cands[0].get("content") or {}).get("parts") or []
+    text = "".join(p.get("text", "") for p in parts)
+    if not text:
+        raise RuntimeError("Gemini returned empty text (finishReason=%s)" % cands[0].get("finishReason"))
+    return parse_json_array(text, len(texts))
 
 
 def translate_groq(texts):
@@ -559,11 +576,15 @@ def translate_texts(texts):
                         detail += " - " + safe(msg, 160).replace(GEMINI_KEY or "\0", "***").replace(GROQ_KEY or "\0", "***")
                 except Exception:
                     pass
+            if not detail and isinstance(exc, (RuntimeError, ValueError)):
+                detail = " - " + safe(exc, 160)  # our own message, never contains the key
             print("Translation via %s failed: %s%s" % (name, type(exc).__name__, detail))
             continue
         if result and len(result) == len(texts) and all(HAS_PERSIAN.search(t) for t in result):
             return result, name
-        print("Translation via %s returned an unusable answer." % name)
+        print("Translation via %s returned an unusable answer (expected %d texts, got %s, Persian text: %s)."
+              % (name, len(texts), len(result) if result else "none",
+                 "yes" if result and any(HAS_PERSIAN.search(t) for t in result) else "no"))
     return None, None
 
 
@@ -740,6 +761,14 @@ def main():
             sys.exit(1)
         result = send_message("✅ ربات کانال سلبریتی فعال است و به کانال وصل شد.")
         print("Test message: %s" % result)
+        # Also try the translator, so a broken Gemini key / model name shows up right here.
+        print("Translation test: model=%s, Gemini key %s, Groq key %s."
+              % (GEMINI_MODEL, "set" if GEMINI_KEY else "MISSING", "set" if GROQ_KEY else "not set"))
+        out, engine = translate_texts(["Taylor Swift announces a surprise album."])
+        if out:
+            print("Translation test: OK via %s -> %s" % (engine, out[0]))
+        else:
+            alert("Translation test FAILED - see the 'Translation via ...' lines above for the reason.")
         sys.exit(0 if result == "ok" else 1)
 
 
