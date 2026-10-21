@@ -144,7 +144,7 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; NewsBot/1.0)"}
 
 GEMINI_KEY = clean_secret(os.environ.get("GEMINI_API_KEY", ""))
 GROQ_KEY = clean_secret(os.environ.get("GROQ_API_KEY", ""))
-GEMINI_MODEL = re.sub(r"^models/", "", os.environ.get("GEMINI_MODEL", "").strip()) or "gemini-2.5-flash-lite"
+GEMINI_MODEL = re.sub(r"^models/", "", os.environ.get("GEMINI_MODEL", "").strip()) or "gemini-3.5-flash-lite"
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "").strip() or "llama-3.3-70b-versatile"
 # Google Translate is much weaker than Gemini, so it is off. If Gemini (and the optional Groq)
 # fail, the items are posted in the original English text.
